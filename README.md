@@ -1,2 +1,4 @@
 # Repost-Detector
-#### Reads in parametrized most recent messages in specified groupme group, and of the most recent messages retrieved, those that include images that have arlready been sent previously (or reposted) will trigger the program to return the name of the member who sent the repost.
+#### Detects reposts within a "Meme GroupMe group chat." 
+#### Returns the username of any group member that sends an image that resembles an image previously sent in the history of the chat.
+
