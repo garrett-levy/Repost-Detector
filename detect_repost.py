@@ -6,18 +6,16 @@ import os
 from os import path
 import shutil
 from config import *
-# need groupme api token
-# need DeepAI image similarity api token
-
-#### This program will return the name of the memeber of the groupme who reposts a meme that is:
-####        (1) identical to a meme in database
-####        (2) is not the same message
 
 
-class DetectRepost:
-    def __init__(self, input_name):
+class RepostDetector:
+    def __init__(self, input_name, number_to_validate, how_far_to_look_back):
         self.name = input_name
         self.group_id = self.get_group_id()
+        # how many messages would you like to check?
+        self.amount_recent = number_to_validate
+        # how many memes deep into the database? Set to -1 if you want to look at entire DB
+        self.amount_back = how_far_to_look_back
         self.count = self.get_count()
 
     def get_group_id(self):
@@ -34,7 +32,9 @@ class DetectRepost:
         return count
 
     def get_messages(self):
-        endpoint = f'https://api.groupme.com/v3/groups/{self.group_id}/messages?limit=10&token={GM_TOKEN}'
+        # 10 most recent messages
+        recent = self.amount_recent
+        endpoint = f'https://api.groupme.com/v3/groups/{self.group_id}/messages?limit={recent}&token={GM_TOKEN}'
         response = requests.get(endpoint)
         messages = json.loads(response.text)
         return messages
@@ -42,6 +42,8 @@ class DetectRepost:
     def get_urls_of_memes(self, messages):
         response = messages['response']['messages']
         urls = []
+        count_ids = []
+        count = self.count
         for i in range(0, len(response)):
             if len(response[i]['attachments']) > 0:
                 type = response[i]['attachments'][0]['type']
@@ -50,12 +52,14 @@ class DetectRepost:
                     likes = len(response[i]['favorited_by'])
                     if (likes >= 0) & (type == 'image'):
                         urls.append(url)
-        return urls
+                        count_ids.append(count-i)
+        return urls, count_ids
 
-    def download_images(self, meme_url_list):
+    # this could be wrong, count should be the count - number of messages not count-indix of meme url
+    def download_images(self, meme_url_list, count_ids):
         today = date.today()
         for i in range(len(meme_url_list)):
-            count = self.count - i
+            count = count_ids[i]
             img_data = requests.get(meme_url_list[i]).content
             filename = f'meme_{today}_{count}.jpeg'
             with open(filename, 'wb') as handler:
@@ -88,18 +92,17 @@ def similar(file1_path, file2_path):
 
 ################################################################
 
-def find_repost(group_name):
-    detect_repost = DetectRepost(group_name)
-    messages = detect_repost.get_messages()
-    urls = detect_repost.get_urls_of_memes(messages)
-    detect_repost.download_images(urls)
+def find_repost(group_name, repost_detector):
+    messages = repost_detector.get_messages()
+    urls, count_ids = repost_detector.get_urls_of_memes(messages)
+    repost_detector.download_images(urls, count_ids)
 
     new_memes_list = glob.glob("/Users/Garrett/Desktop/Projects/GroupMeThanos/*jpeg")
     old_memes_list = glob.glob("/Users/Garrett/Desktop/Projects/GroupMeThanos/MemeDB/*jpeg")
 
     # if every old meme is to be compared, set amount_ago to negative number. otherwise, set amount ago to as far
     # back to look at old memes e.g. if amount_ago = 20 you would compare every new meme to the last 20 memes
-    amount_ago = -1
+    amount_ago = repost_detector.amount_back
     if amount_ago < 0:
         most_recent_memes = old_memes_list
     else:
@@ -118,9 +121,9 @@ def find_repost(group_name):
             for old_meme in most_recent_memes:
                 if found_repost != 1:
                     print('comparing', new_meme, 'with', old_meme)
-                    if similar(new_meme, old_meme) <= 2:
+                    if similar(new_meme, old_meme) < 2:
                         # if not the same meme
-                        count_length = len(str(detect_repost.count))
+                        count_length = len(str(repost_detector.count))
                         # maybe comparing different lengthed counts e.g. count 10 with 5
                         while (count_length != 0) & (found_repost != 1):
                             try:
@@ -128,6 +131,7 @@ def find_repost(group_name):
                                         old_meme[len(old_meme) - (5 + count_length):len(old_meme) - 5]):
 
                                     indices_of_reposts.append(new_memes_list.index(new_meme))
+                                    print(f'{new_meme} is a repost of {old_meme}')
                                     found_repost = 1
                                 exit()
                             except:
@@ -141,7 +145,7 @@ def find_repost(group_name):
         print('no reposts detected')
     else:
         for repost_index in indices_of_reposts:
-            memes = detect_repost.get_meme_messages(messages)
+            memes = repost_detector.get_meme_messages(messages)
             name = memes[repost_index]['name']
             sender_id = memes[repost_index]['sender_id']
             print(name, sender_id, "reposted!!!!")
@@ -158,7 +162,7 @@ def find_repost(group_name):
 
 if __name__ == "__main__":
     group_name = "UVa Chess Club"
-    find_repost(group_name)
-
+    repost_detector = RepostDetector(group_name, 10, -1)
+    find_repost(group_name, repost_detector)
 
 
